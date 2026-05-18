@@ -1,0 +1,170 @@
+[
+    {
+        "id": "tab_canar_sim",
+        "type": "tab",
+        "label": "Canar Rebuild - Simulator",
+        "disabled": false,
+        "info": "Fuel tanker monitoring rebuild. Generates dummy 140-byte sensor packets for 6 virtual tanks across Sudan, decodes them faithfully using the original Canar binary protocol, and pushes JSON updates over WebSocket at /ws/tanks for the React dashboard.",
+        "env": [
+            {
+                "name": "Devices",
+                "value": "{\"data\":[{\"IMEI\":\"860147043918943\",\"name\":\"SOBA2\",\"site_name\":\"Khartoum - Soba (Savola)\",\"city\":\"Khartoum\",\"address\":\"Sudan, Khartoum, Soba, Savola\",\"lat\":15.4837,\"long\":32.5836,\"model\":\"TEK 733\",\"max_cm\":200,\"capacity_liters\":1000,\"hw_uc15\":true,\"sw_major\":0,\"sw_minor\":5},{\"IMEI\":\"860147043918944\",\"name\":\"KRT_AIRPORT\",\"site_name\":\"Khartoum International Airport\",\"city\":\"Khartoum\",\"address\":\"Sudan, Khartoum, Airport Rd\",\"lat\":15.5896,\"long\":32.5536,\"model\":\"TEK 733\",\"max_cm\":250,\"capacity_liters\":2000,\"hw_uc15\":true,\"sw_major\":0,\"sw_minor\":5},{\"IMEI\":\"860147043923083\",\"name\":\"OMD_TOWER_18\",\"site_name\":\"Omdurman Tower #18\",\"city\":\"Omdurman\",\"address\":\"Sudan, Omdurman, Ombada 18\",\"lat\":15.6715,\"long\":32.4511,\"model\":\"TEK 766\",\"max_cm\":220,\"capacity_liters\":1500,\"hw_uc15\":false,\"sw_major\":1,\"sw_minor\":2},{\"IMEI\":\"860147043923084\",\"name\":\"PRT_SUDAN_DEPOT\",\"site_name\":\"Port Sudan Shipping Depot\",\"city\":\"Port Sudan\",\"address\":\"Sudan, Port Sudan, Harbor District\",\"lat\":19.6157,\"long\":37.2164,\"model\":\"TEK 822\",\"max_cm\":350,\"capacity_liters\":5000,\"hw_uc15\":true,\"sw_major\":2,\"sw_minor\":1},{\"IMEI\":\"860147043923085\",\"name\":\"WAD_MADANI_HUB\",\"site_name\":\"Wad Madani Regional Hub\",\"city\":\"Wad Madani\",\"address\":\"Sudan, Wad Madani, Central\",\"lat\":14.4012,\"long\":33.5199,\"model\":\"TEK 790\",\"max_cm\":220,\"capacity_liters\":1500,\"hw_uc15\":true,\"sw_major\":1,\"sw_minor\":3},{\"IMEI\":\"860147043923086\",\"name\":\"KASSALA_EAST\",\"site_name\":\"Kassala Eastern Station\",\"city\":\"Kassala\",\"address\":\"Sudan, Kassala, East District\",\"lat\":15.4500,\"long\":36.4000,\"model\":\"TEK 643\",\"max_cm\":200,\"capacity_liters\":1000,\"hw_uc15\":false,\"sw_major\":0,\"sw_minor\":8}]}",
+                "type": "json"
+            }
+        ]
+    },
+    {
+        "id": "inject_tick",
+        "type": "inject",
+        "z": "tab_canar_sim",
+        "name": "Every 5s",
+        "props": [
+            {"p": "payload"},
+            {"p": "topic", "vt": "str"}
+        ],
+        "repeat": "5",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "2",
+        "topic": "tick",
+        "payload": "",
+        "payloadType": "date",
+        "x": 130,
+        "y": 120,
+        "wires": [["fn_simulator"]]
+    },
+    {
+        "id": "fn_simulator",
+        "type": "function",
+        "z": "tab_canar_sim",
+        "name": "Tank Simulator (6 devices)",
+        "func": "// Emits one 140-byte buffer per device per tick.\n// State per IMEI is kept in flow context.\n\nconst env_data = env.get('Devices');\nif (!env_data || !env_data.data) {\n    node.error('Devices env var not set');\n    return null;\n}\nconst devices = env_data.data;\n\nconst MODEL_CODES = {\n    'TEK 766': 0x00, 'TEK 586': 0x02, 'TEK 790': 0x03, 'TEK 733': 0x05,\n    'TEK 643': 0x06, 'TEK 811': 0x07, 'TEK 822': 0x08, 'TEK 733A': 0x09\n};\n\nfunction initState(device) {\n    const maxCm = device.max_cm || 200;\n    // cm = distance from sensor (top) to fuel surface. Low cm = tank full.\n    // Start with ~50-90% full (cm at 10-50% of max).\n    return {\n        cm: Math.round(maxCm * (0.1 + Math.random() * 0.4)),\n        temp: 25 + Math.random() * 10,\n        battery_volt: 5.5 + (Math.random() - 0.5) * 0.5,\n        gsm: 60 + Math.floor(Math.random() * 100),\n        msg_count: 0,\n        last_refill_tick: -1000,\n        tick: 0,\n        last_refill: false,\n        last_drop: false,\n        history: []\n    };\n}\n\nfunction evolveState(state, device) {\n    state.tick++;\n    state.msg_count++;\n    const maxCm = device.max_cm || 200;\n\n    // Natural drain: fuel surface drops -> sensor distance increases\n    const drainRate = 1 + Math.random() * 2;\n    state.cm = Math.min(maxCm, state.cm + drainRate);\n\n    // Refill simulation: when tank is low (cm is high), top it back up\n    state.last_refill = false;\n    if (state.tick - state.last_refill_tick > 40 + Math.floor(Math.random() * 20)) {\n        if (state.cm > maxCm * 0.7) {\n            state.cm = Math.max(5, maxCm * (0.05 + Math.random() * 0.1));\n            state.last_refill_tick = state.tick;\n            state.last_refill = true;\n        }\n    }\n\n    // Rare drop event (theft sim): fuel suddenly drops -> cm jumps up\n    state.last_drop = false;\n    if (Math.random() < 0.02 && state.cm < maxCm - 50) {\n        state.cm += 30 + Math.random() * 50;\n        state.last_drop = true;\n    }\n\n    state.cm = Math.max(0, Math.min(maxCm, Math.round(state.cm)));\n\n    // Temperature drift\n    state.temp += (Math.random() - 0.5) * 0.5;\n    state.temp = Math.max(15, Math.min(45, state.temp));\n\n    // Battery decay (recharge if very low)\n    if (state.battery_volt < 3.5) state.battery_volt = 5.5;\n    else state.battery_volt -= 0.001 + Math.random() * 0.002;\n\n    // GSM drift\n    state.gsm += Math.floor((Math.random() - 0.5) * 20);\n    state.gsm = Math.max(0, Math.min(255, state.gsm));\n\n    // History (most recent first, max 28)\n    state.history.unshift({\n        cm: Math.round(state.cm),\n        temp: Math.round(state.temp * 2) / 2,\n        ultrasonic_rssi: Math.floor(150 + Math.random() * 80),\n        src: Math.floor(Math.random() * 16)\n    });\n    if (state.history.length > 28) state.history.pop();\n\n    return state;\n}\n\nfunction encodePayload(state, device) {\n    const buf = Buffer.alloc(140);\n\n    // [0] Model code\n    buf[0] = MODEL_CODES[device.model] !== undefined ? MODEL_CODES[device.model] : 0x05;\n\n    // [1] HW Revision (0 = UC20, non-zero top-5-bits = UC15)\n    buf[1] = device.hw_uc15 ? 0x08 : 0x00;\n\n    // [2] SW Version: top 3 bits = major, bottom 5 bits = minor (decoder formats as \"minor.major\")\n    const swMajor = device.sw_major !== undefined ? device.sw_major : 0;\n    const swMinor = device.sw_minor !== undefined ? device.sw_minor : 5;\n    buf[2] = ((swMajor & 0x07) << 5) | (swMinor & 0x1F);\n\n    // [3] Reason flags (MSB first)\n    let reason = 0;\n    if (state.last_refill) reason |= 0x80;\n    if (state.last_drop) reason |= 0x40;\n    reason |= 0x01; // scheduled\n    if (state.cm > (device.max_cm || 200) - 20) reason |= 0x02; // tank low alarm\n    buf[3] = reason;\n\n    // [4] Alarm flags\n    let alarm = 0;\n    if (state.cm > (device.max_cm || 200) - 20) alarm |= 0x80; // active (tank low)\n    buf[4] = alarm;\n\n    // [5] GSM RSSI\n    buf[5] = state.gsm & 0xFF;\n\n    // [6] Battery: bit1=act_3g, bit2=RTC_set, bottom 5 bits = (volt*10)-30\n    const voltVal = Math.max(0, Math.min(31, Math.round(state.battery_volt * 10 - 30)));\n    buf[6] = 0x40 | 0x20 | voltVal;\n\n    // [7-14] IMEI as BCD (each byte's hex value = 2 decimal digits)\n    const imeiStr = String(device.IMEI).padStart(16, '0');\n    for (let i = 0; i < 8; i++) {\n        const pair = imeiStr.substring(i * 2, i * 2 + 2);\n        buf[7 + i] = parseInt(pair, 16);\n    }\n\n    // [15] Message type\n    buf[15] = 0x3B;\n\n    // [16] msg_length low byte\n    buf[16] = 0x10;\n\n    // [17-18] msg_count (uint16 BE)\n    buf[17] = (state.msg_count >> 8) & 0xFF;\n    buf[18] = state.msg_count & 0xFF;\n\n    // [19] tickets (top 3 bits, 0) + RTC hours (bottom 5 bits)\n    const now = new Date();\n    buf[19] = now.getHours() & 0x1F;\n\n    // [20-21] error code\n    buf[20] = 0;\n    buf[21] = 0;\n\n    // [22] reserved\n    buf[22] = 0;\n\n    // [23] logger interval: 0x80 = 15 min\n    buf[23] = 0x80;\n\n    // [24] count_to_log\n    buf[24] = state.tick % 256;\n\n    // [25] RTC minutes\n    buf[25] = now.getMinutes();\n\n    // [26-137] history: 28 records x 4 bytes\n    for (let r = 0; r < Math.min(state.history.length, 28); r++) {\n        const rec = state.history[r];\n        const off = 26 + r * 4;\n        buf[off + 0] = rec.ultrasonic_rssi & 0xFF;\n        buf[off + 1] = Math.max(0, Math.min(255, Math.round((rec.temp + 30) * 2)));\n        // byte[2]: top 2 bits free, bits 2-5 = SRC (4 bits), bottom 2 bits = cm high 2 bits\n        buf[off + 2] = ((rec.src & 0x0F) << 2) | ((rec.cm >> 8) & 0x03);\n        buf[off + 3] = rec.cm & 0xFF;\n    }\n    // [138-139] unused\n\n    return buf;\n}\n\n// Main: one message per device\nfor (let i = 0; i < devices.length; i++) {\n    const device = devices[i];\n    const stateKey = 'tank_state_' + device.IMEI;\n    let state = flow.get(stateKey) || initState(device);\n    state = evolveState(state, device);\n    flow.set(stateKey, state);\n\n    node.send({ payload: encodePayload(state, device), _imei: device.IMEI });\n}\n\nreturn null;\n",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 120,
+        "wires": [["fn_decoder", "debug_raw"]]
+    },
+    {
+        "id": "fn_decoder",
+        "type": "function",
+        "z": "tab_canar_sim",
+        "name": "Data to Process (Decoder)",
+        "func": "// Rebuild of original Canar decoder. Returns ONE combined message\n// containing header info + latest reading + history, ready for the formatter.\n\nconst env_data = env.get('Devices');\nconst devices = env_data.data;\n\nconst payload_size = msg.payload.length;\nconst decimal_data = msg.payload;\nconst hex_array = [];\nfor (let i = 0; i < decimal_data.length; i++) {\n    let h = decimal_data[i].toString(16);\n    if (h.length === 1) h = '0' + h;\n    hex_array.push(h);\n}\n\nconst info = {};\ninfo.raw_payload = hex_array.join('');\n\n// Model\nconst MODEL_MAP = {\n    '00': 'TEK 766', '02': 'TEK 586', '03': 'TEK 790', '05': 'TEK 733',\n    '06': 'TEK 643', '07': 'TEK 811', '08': 'TEK 822', '09': 'TEK 733A'\n};\ninfo.model = MODEL_MAP[hex_array[0]] || 'UNKNOWN';\n\n// HW Revision\nconst byte1 = parseInt(hex_array[1], 16).toString(2).padStart(8, '0');\ninfo.HW_Revision = (parseInt(byte1.slice(0, 5), 2) === 0) ? 'UC20' : 'UC15';\n\n// SW Version (decoder convention: \"minor.major\")\nconst byte2 = parseInt(hex_array[2], 16).toString(2).padStart(8, '0');\ninfo.SW_version = parseInt(byte2.slice(-5), 2) + '.' + parseInt(byte2.slice(0, 3), 2);\n\n// Reason flags\nconst byte3 = parseInt(hex_array[3], 16).toString(2).padStart(8, '0');\ninfo.Reason = {\n    dynamic_Limit2: byte3[0] === '1',\n    dynamic_Limit: byte3[1] === '1',\n    tsp_request: byte3[2] === '1',\n    reboot: byte3[3] === '1',\n    manual: byte3[4] === '1',\n    server_request: byte3[5] === '1',\n    alarm: byte3[6] === '1',\n    scheduled: byte3[7] === '1'\n};\n\n// Alarm flags\nconst byte4 = parseInt(hex_array[4], 16).toString(2).padStart(8, '0');\ninfo.Alarm = {\n    active: byte4[0] === '1',\n    bund_status: byte4[4] === '1',\n    limit3: byte4[5] === '1',\n    limit2: byte4[6] === '1',\n    limit1: byte4[7] === '1'\n};\n\n// GSM\ninfo.GSM = parseInt(hex_array[5], 16);\n\n// Battery\nconst byte6 = parseInt(hex_array[6], 16).toString(2).padStart(8, '0');\nconst volt = (parseInt(byte6.slice(-5), 2) + 30) / 10;\ninfo.Battery = {\n    act_3g: byte6[1] === '1',\n    RTC_set: byte6[2] === '1',\n    volt: volt\n};\ninfo.Battery_level = Math.max(0, Math.min(100, Math.round(((volt - 3.4) * 100) / 2.6)));\n\n// IMEI (BCD across bytes 7-14)\nlet IMEI = '';\nfor (let i = 7; i <= 14; i++) IMEI += hex_array[i];\ninfo.IMEI = parseInt(IMEI);\nconst matched = devices.find(d => parseInt(d.IMEI) === info.IMEI);\ninfo.device_name = matched ? matched.name : 'UNKNOWN';\n\n// Misc header\nconst byte15 = parseInt(hex_array[15], 16).toString(2).padStart(8, '0');\ninfo.msg_type = parseInt(byte15.slice(-6), 2);\ninfo.msg_count = (parseInt(hex_array[17], 16) * 256) + parseInt(hex_array[18], 16);\n\n// Logger interval\nconst byte23hex = hex_array[23];\nlet logger;\nif (byte23hex === '00') logger = 1;\nelse if (byte23hex === '80') logger = 15;\nelse logger = parseInt(parseInt(byte23hex, 16).toString(2).padStart(8, '0').slice(-7), 2) * 15;\ninfo.logger = logger;\n\n// RTC\nconst byte19 = parseInt(hex_array[19], 16).toString(2).padStart(8, '0');\nconst RTC_hours = parseInt(byte19.slice(-5), 2);\nconst RTC_minutes = parseInt(hex_array[25], 16);\ninfo.RTC = String(RTC_hours).padStart(2, '0') + ':' + String(RTC_minutes).padStart(2, '0');\n\n// Historical data\nconst hex_data_length = (hex_array.length - 28) / 4;\nconst hex_data = [];\nlet index = 26;\nfor (let i = 0; i < hex_data_length; i++) {\n    hex_data.push(hex_array.slice(index, index + 4).join(''));\n    index += 4;\n}\n\nconst data = [];\nlet current_RTC = (RTC_hours * 60) + RTC_minutes;\nfor (let i = 0; i < hex_data.length; i++) {\n    if (hex_data[i] === '00000000') continue;\n    const bit_2_3 = parseInt(hex_data[i].slice(4, 6), 16).toString(2).padStart(8, '0');\n    const bit_0_1 = parseInt(hex_data[i].slice(-2), 16).toString(2).padStart(8, '0');\n    const cm = parseInt((bit_2_3 + bit_0_1).slice(-10), 2);\n    const SRC = parseInt(bit_2_3.slice(2, 6), 2);\n    const Ultrasonic_RSSI = parseInt(hex_data[i].slice(0, 2), 16);\n    const temp = (parseInt(hex_data[i].slice(2, 4), 16) / 2) - 30;\n    const rtc_h = Math.floor(Math.abs(current_RTC) / 60);\n    const rtc_m = Math.abs(current_RTC) % 60;\n    data.push({\n        payload: hex_data[i],\n        RTC: String(rtc_h).padStart(2, '0') + ':' + String(rtc_m).padStart(2, '0'),\n        cm: cm,\n        SRC: SRC,\n        Ultrasonic_RSSI: Ultrasonic_RSSI,\n        temp: temp,\n        IMEI: info.IMEI,\n        refill: info.Reason.dynamic_Limit2,\n        drop: info.Reason.dynamic_Limit\n    });\n    current_RTC -= logger;\n}\n\nconst latest = data[0] || { cm: 0, SRC: 0, Ultrasonic_RSSI: 0, temp: 0, RTC: '00:00' };\ninfo.latest = {\n    cm: latest.cm,\n    temp: latest.temp,\n    ultrasonic_rssi: latest.Ultrasonic_RSSI,\n    src: latest.SRC,\n    rtc: latest.RTC\n};\ninfo.alarm_low_level = (info.latest.cm < 20);\ninfo.history = data;\n\n// Validation\nconst VALID_IMEIS = [860147043918943, 860147043918944, 860147043923083, 860147043923084, 860147043923085, 860147043923086];\nif (!VALID_IMEIS.includes(info.IMEI) || payload_size !== 140) {\n    node.warn('Invalid payload: IMEI=' + info.IMEI + ', size=' + payload_size);\n    return null;\n}\n\nmsg.payload = info;\nreturn msg;\n",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 620,
+        "y": 120,
+        "wires": [["fn_format"]]
+    },
+    {
+        "id": "fn_format",
+        "type": "function",
+        "z": "tab_canar_sim",
+        "name": "Format for WebSocket",
+        "func": "// Enrich decoded payload with site info and shape it for the React frontend.\n\nconst info = msg.payload;\nconst env_data = env.get('Devices');\nconst device = env_data.data.find(d => parseInt(d.IMEI) === info.IMEI);\nif (!device) return null;\n\nconst latest = info.latest || {};\nconst tankMaxCm = device.max_cm || 200;\nconst tankCapacity = device.capacity_liters || 1000;\n// Sensor measures distance from top to fuel surface (ullage). Convert to fuel depth.\nconst fuelDepthCm = Math.max(0, tankMaxCm - (latest.cm || 0));\nconst levelPercent = Math.max(0, Math.min(100, (fuelDepthCm / tankMaxCm) * 100));\nconst volume = Math.round((fuelDepthCm / tankMaxCm) * tankCapacity);\nconst alarmLowLevel = fuelDepthCm < 20;\n\nmsg.payload = {\n    type: 'tank_update',\n    timestamp: new Date().toISOString(),\n    imei: info.IMEI,\n    device: info.device_name,\n    site: {\n        name: device.site_name || device.name,\n        city: device.city,\n        address: device.address,\n        lat: device.lat,\n        long: device.long\n    },\n    tank: {\n        capacity_liters: tankCapacity,\n        max_cm: tankMaxCm\n    },\n    reading: {\n        cm: latest.cm,\n        fuel_depth_cm: fuelDepthCm,\n        level_percent: Math.round(levelPercent * 10) / 10,\n        volume_liters: volume,\n        temperature_c: latest.temp,\n        ultrasonic_rssi: latest.ultrasonic_rssi,\n        src: latest.src,\n        rtc: latest.rtc\n    },\n    device_status: {\n        model: info.model,\n        hw_revision: info.HW_Revision,\n        sw_version: info.SW_version,\n        battery_volt: Math.round(info.Battery.volt * 10) / 10,\n        battery_percent: info.Battery_level,\n        gsm_signal: info.GSM,\n        logger_interval_min: info.logger\n    },\n    alarms: {\n        low_level: alarmLowLevel,\n        active: info.Alarm.active,\n        bund_status: info.Alarm.bund_status,\n        limit1: info.Alarm.limit1,\n        limit2: info.Alarm.limit2,\n        limit3: info.Alarm.limit3\n    },\n    events: {\n        refill: info.Reason.dynamic_Limit2,\n        drop: info.Reason.dynamic_Limit,\n        scheduled: info.Reason.scheduled\n    },\n    raw_payload_hex: info.raw_payload\n};\n\nreturn msg;\n",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 880,
+        "y": 120,
+        "wires": [["ws_out", "debug_formatted"]]
+    },
+    {
+        "id": "ws_out",
+        "type": "websocket out",
+        "z": "tab_canar_sim",
+        "name": "WS /ws/tanks",
+        "server": "ws_listener_tanks",
+        "client": "",
+        "x": 1130,
+        "y": 80,
+        "wires": []
+    },
+    {
+        "id": "debug_raw",
+        "type": "debug",
+        "z": "tab_canar_sim",
+        "name": "raw 140-byte buffer",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 410,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "debug_formatted",
+        "type": "debug",
+        "z": "tab_canar_sim",
+        "name": "tank update (JSON)",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "payload.device",
+        "targetType": "msg",
+        "statusVal": "payload.device",
+        "statusType": "auto",
+        "x": 920,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "catch_errors",
+        "type": "catch",
+        "z": "tab_canar_sim",
+        "name": "All errors",
+        "scope": null,
+        "uncaught": false,
+        "x": 110,
+        "y": 320,
+        "wires": [["debug_errors"]]
+    },
+    {
+        "id": "debug_errors",
+        "type": "debug",
+        "z": "tab_canar_sim",
+        "name": "error",
+        "active": true,
+        "tosidebar": true,
+        "console": true,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 270,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "comment_overview",
+        "type": "comment",
+        "z": "tab_canar_sim",
+        "name": "Canar Rebuild - Simulator Flow",
+        "info": "Pipeline:\n\n[Inject every 5s]\n   -> [Tank Simulator]\n        Generates one 140-byte binary buffer per device (6 devices).\n        State per IMEI evolves: drains, occasional refills, rare drop events.\n   -> [Data to Process (Decoder)]\n        Faithful rebuild of original Canar decoder. Returns one combined object.\n   -> [Format for WebSocket]\n        Enriches with site info (lat/long/city) and shapes for the frontend.\n   -> [WS /ws/tanks]\n        Pushed live to ws://<host>:1880/ws/tanks\n\nConfigure 6 devices via the tab's env var 'Devices'.",
+        "x": 200,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "ws_listener_tanks",
+        "type": "websocket-listener",
+        "path": "/ws/tanks",
+        "wholemsg": "false"
+    }
+]

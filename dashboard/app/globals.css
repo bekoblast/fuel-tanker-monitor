@@ -1,0 +1,52 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@theme inline {
+  --color-canar-bg: #eeeeee;
+  --color-canar-blue: #2369a7;
+  --color-canar-green: #23b832;
+  --color-canar-amber: #efab16;
+  --color-canar-red: #ed0a0a;
+  --color-canar-gray: #747474;
+  --color-canar-purple: #6a15e2;
+  --color-canar-grid-bg: #244c76;
+  --color-canar-chart-green: #8af321;
+  --color-canar-gauge-green: #1ede63;
+  --color-canar-gauge-yellow: #d7ff00;
+  --color-canar-gauge-red: #f30000;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  --background: #eeeeee;
+  --foreground: #1c1c1c;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+.tabular-tight {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.live-dot {
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+/* Leaflet popup tweak so it doesn't look 2008 */
+.leaflet-popup-content-wrapper {
+  border-radius: 6px;
+}
+.leaflet-container {
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
