@@ -57,9 +57,9 @@ export default function RootLayout({
                 About
               </Link>
               <a
-                href="https://github.com/"
+                href="https://github.com/bekoblast/fuel-tanker-monitor"
                 target="_blank"
-                rel="noopener"
+                rel="noopener noreferrer"
                 className="px-3 py-1.5 rounded-md hover:bg-zinc-100 text-zinc-500"
               >
                 Source

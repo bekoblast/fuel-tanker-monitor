@@ -310,7 +310,7 @@ byte[26..137] = up to 28 historical readings, 4 bytes each
         <div className="flex flex-wrap gap-3 pt-2 not-prose">
           <ContactLink href="mailto:beko1986@gmail.com" icon={<Mail className="size-4" />} label="beko1986@gmail.com" />
           <ContactLink href="https://beko-cloud.work" icon={<Globe className="size-4" />} label="beko-cloud.work" />
-          <ContactLink href="https://github.com/" icon={<Code className="size-4" />} label="Source on GitHub" />
+          <ContactLink href="https://github.com/bekoblast/fuel-tanker-monitor" icon={<Code className="size-4" />} label="Source on GitHub" />
         </div>
       </Section>
 
