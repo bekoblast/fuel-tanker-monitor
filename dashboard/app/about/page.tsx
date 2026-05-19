@@ -314,6 +314,27 @@ byte[26..137] = up to 28 historical readings, 4 bytes each
         </div>
       </Section>
 
+      {/* See also */}
+      <Section title="See also">
+        <p>
+          For the second project in this series — a 3-phase transformer
+          monitor for the Sudanese Electrical Distribution Company (SEDC) — see{' '}
+          <a
+            href="https://sedc-transformer-monitor.netlify.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-canar-blue hover:underline font-medium"
+          >
+            sedc-transformer-monitor.netlify.app
+          </a>
+          . Same stack and same era, different domain: JSON over MQTT instead
+          of binary over TCP, 6 distribution transformers across Khartoum
+          metro, per-phase voltage / current / power / frequency monitoring
+          with the original electrical color code (red / yellow / blue per
+          phase).
+        </p>
+      </Section>
+
       {/* CTA */}
       <div className="border-t border-zinc-200 pt-6">
         <Link
