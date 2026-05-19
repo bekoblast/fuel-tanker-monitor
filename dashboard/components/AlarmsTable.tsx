@@ -14,17 +14,33 @@ type Alarm = {
 function extractAlarms(updates: TankUpdate[]): Alarm[] {
   const alarms: Alarm[] = [];
   for (const u of updates) {
-    if (u.alarms.low_level) {
+    // Use the same critical/warning thresholds as getTankStatus so the
+    // alarm severity matches the device's overall status.
+    const isCritical = u.alarms.low_level || u.reading.level_percent < 20;
+    const isWarning = !isCritical && u.reading.level_percent < 40;
+
+    if (isCritical) {
       alarms.push({
         imei: u.imei,
         device: u.device,
         site: u.site.city,
-        type: 'Low fuel level',
+        type: 'Critically low fuel level',
         severity: 'critical',
         detail: `${u.reading.level_percent.toFixed(1)}% / ${u.reading.volume_liters}L`,
         timestamp: u.timestamp,
       });
+    } else if (isWarning) {
+      alarms.push({
+        imei: u.imei,
+        device: u.device,
+        site: u.site.city,
+        type: 'Level approaching low',
+        severity: 'warning',
+        detail: `${u.reading.level_percent.toFixed(1)}% / ${u.reading.volume_liters}L`,
+        timestamp: u.timestamp,
+      });
     }
+
     if (u.events.drop) {
       alarms.push({
         imei: u.imei,
@@ -44,17 +60,6 @@ function extractAlarms(updates: TankUpdate[]): Alarm[] {
         type: 'Refill detected',
         severity: 'info',
         detail: `Tank topped up to ${u.reading.level_percent.toFixed(1)}%`,
-        timestamp: u.timestamp,
-      });
-    }
-    if (!u.alarms.low_level && u.reading.level_percent < 40) {
-      alarms.push({
-        imei: u.imei,
-        device: u.device,
-        site: u.site.city,
-        type: 'Level approaching low',
-        severity: 'warning',
-        detail: `Currently ${u.reading.level_percent.toFixed(1)}%`,
         timestamp: u.timestamp,
       });
     }

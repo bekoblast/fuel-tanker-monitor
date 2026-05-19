@@ -84,7 +84,10 @@ export function generateUpdate(device: Device): TankUpdate {
   const levelPercent = Math.max(0, Math.min(100, (fuelDepthCm / device.max_cm) * 100));
   const volume = Math.round((fuelDepthCm / device.max_cm) * device.capacity_liters);
   const battPercent = Math.max(0, Math.min(100, Math.round(((state.battery_volt - 3.4) * 100) / 2.6)));
-  const alarmLow = fuelDepthCm < 20;
+  // Trigger the low-level alarm bit when the tank drops below 20% of capacity.
+  // (Using level_percent rather than absolute cm so the threshold scales with
+  // tank size — a 5000L tank at 8% still alarms.)
+  const alarmLow = levelPercent < 20;
 
   // Inactive devices emit a timestamp 2 minutes in the past so getTankStatus
   // reports them as offline (no fresh telemetry).
