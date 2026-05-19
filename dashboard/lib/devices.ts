@@ -1,7 +1,12 @@
 import type { Device } from './types';
 
-// Matches the env.Devices config in the Node-RED simulator flow.
-// Keep these in sync.
+// Six fuel tanker sites across Sudan. SOBA2 is the actual production site
+// from the 2023 Canar deployment; the others are realistic sites added for
+// the rebuild demo so the status cards on the overview page always show
+// every operational state at once (active / warning / critical / inactive).
+//
+// The `scenario` field is a demo seed — it tells the browser simulator
+// which behavior band to bias toward. The Node-RED simulator uses the same.
 export const DEVICES: Device[] = [
   {
     IMEI: '860147043918943',
@@ -17,6 +22,7 @@ export const DEVICES: Device[] = [
     hw_uc15: true,
     sw_major: 0,
     sw_minor: 5,
+    scenario: 'normal',
   },
   {
     IMEI: '860147043918944',
@@ -32,6 +38,7 @@ export const DEVICES: Device[] = [
     hw_uc15: true,
     sw_major: 0,
     sw_minor: 5,
+    scenario: 'normal',
   },
   {
     IMEI: '860147043923083',
@@ -47,6 +54,7 @@ export const DEVICES: Device[] = [
     hw_uc15: false,
     sw_major: 1,
     sw_minor: 2,
+    scenario: 'warning',
   },
   {
     IMEI: '860147043923084',
@@ -62,6 +70,7 @@ export const DEVICES: Device[] = [
     hw_uc15: true,
     sw_major: 2,
     sw_minor: 1,
+    scenario: 'critical',
   },
   {
     IMEI: '860147043923085',
@@ -77,6 +86,7 @@ export const DEVICES: Device[] = [
     hw_uc15: true,
     sw_major: 1,
     sw_minor: 3,
+    scenario: 'normal',
   },
   {
     IMEI: '860147043923086',
@@ -92,6 +102,7 @@ export const DEVICES: Device[] = [
     hw_uc15: false,
     sw_major: 0,
     sw_minor: 8,
+    scenario: 'inactive',
   },
 ];
 

@@ -41,6 +41,23 @@ The dashboard always works on its own (browser simulator). When Node-RED is runn
 
 ---
 
+## The 6 tanks (SOBA2 is real, the others are realistic Sudan sites added for the demo)
+
+Each device has a `scenario` field that biases the simulator toward a fixed
+operational state, so the overview status cards always show every state at
+once. Expected breakdown: **Total 6 · Active 3 · Inactive 1 · Warning 1 · Critical 1**.
+
+| ID | Site | City | Capacity | Scenario |
+|----|------|------|---------:|----------|
+| **SOBA2** | Soba (Savola) | Khartoum | 1000 L | `normal` |
+| **KRT_AIRPORT** | International Airport | Khartoum | 2000 L | `normal` |
+| **OMD_TOWER_18** | Tower #18 | Omdurman | 1500 L | `warning` (low fuel) |
+| **PRT_SUDAN_DEPOT** | Shipping Depot | Port Sudan | 5000 L | `critical` (alarm) |
+| **WAD_MADANI_HUB** | Regional Hub | Wad Madani | 1500 L | `normal` |
+| **KASSALA_EAST** | Eastern Station | Kassala | 1000 L | `inactive` (offline) |
+
+---
+
 ## Project layout
 
 ```

@@ -1,76 +1,69 @@
 // Browser-side tank simulator — TypeScript port of the Node-RED Tank Simulator function.
-// Runs in the browser so the deployed dashboard "just works" without needing Node-RED.
+// Each device is biased toward its assigned `scenario` so the overview status
+// cards always show a meaningful breakdown of every operational state.
+// Runs in the browser so the deployed dashboard "just works" without Node-RED.
 // When a real WebSocket connection from Node-RED is available, the stream will override.
 
-import type { Device, TankUpdate } from './types';
+import type { Device, TankUpdate, Scenario } from './types';
 
 type TankState = {
-  cm: number; // distance from sensor to fuel surface (ullage); low = full
+  cm: number; // distance from sensor to fuel surface (ullage); LOW = full
   temp: number;
   battery_volt: number;
   gsm: number;
   msg_count: number;
-  last_refill_tick: number;
   tick: number;
-  last_refill: boolean;
-  last_drop: boolean;
 };
 
 const states = new Map<string, TankState>();
 
+// Scenario tuning, expressed as fraction-of-max_cm targets (cm = distance
+// from top to fuel surface, so HIGH cm = empty).
+//   - 'normal'   keeps the tank ~75% full so it stays comfortably above warning
+//   - 'warning'  keeps the tank at ~30% (below 40% threshold, above 20%)
+//   - 'critical' keeps the tank below 20% so the low_level alarm fires
+//   - 'inactive' irrelevant (emitted with stale timestamp)
+const SCENARIO_CM_FRAC: Record<Scenario, { target: number; jitter: number }> = {
+  normal: { target: 0.25, jitter: 0.06 },     // ~75% full
+  warning: { target: 0.68, jitter: 0.04 },    // ~32% full
+  critical: { target: 0.92, jitter: 0.03 },   // ~8% full (triggers low_level alarm)
+  inactive: { target: 0.40, jitter: 0.05 },   // doesn't show, stale timestamp
+};
+
 function initState(device: Device): TankState {
-  const maxCm = device.max_cm;
+  const sc = device.scenario || 'normal';
+  const { target, jitter } = SCENARIO_CM_FRAC[sc];
   return {
-    // Start with tank ~50-90% full -> cm at 10-50% of max (sensor sees fuel close to it)
-    cm: Math.round(maxCm * (0.1 + Math.random() * 0.4)),
+    cm: Math.round(device.max_cm * (target + (Math.random() - 0.5) * jitter)),
     temp: 25 + Math.random() * 10,
     battery_volt: 5.5 + (Math.random() - 0.5) * 0.5,
     gsm: 60 + Math.floor(Math.random() * 100),
     msg_count: 0,
-    last_refill_tick: -1000,
     tick: 0,
-    last_refill: false,
-    last_drop: false,
   };
 }
 
 function evolve(state: TankState, device: Device): TankState {
   state.tick++;
   state.msg_count++;
-  const maxCm = device.max_cm;
+  const sc = device.scenario || 'normal';
+  const { target, jitter } = SCENARIO_CM_FRAC[sc];
+  const targetCm = device.max_cm * target;
 
-  // Natural drain: fuel surface drops -> cm increases
-  const drainRate = 1 + Math.random() * 2;
-  state.cm = Math.min(maxCm, state.cm + drainRate);
+  // Quick mean-revert to the scenario's target so the dashboard never flips
+  // a "normal" tank into critical and vice-versa.
+  state.cm += (targetCm - state.cm) * 0.18;
+  state.cm += (Math.random() - 0.5) * device.max_cm * jitter * 0.4;
+  state.cm = Math.max(0, Math.min(device.max_cm, Math.round(state.cm)));
 
-  // Refill when tank is low
-  state.last_refill = false;
-  if (state.tick - state.last_refill_tick > 40 + Math.floor(Math.random() * 20)) {
-    if (state.cm > maxCm * 0.7) {
-      state.cm = Math.max(5, maxCm * (0.05 + Math.random() * 0.1));
-      state.last_refill_tick = state.tick;
-      state.last_refill = true;
-    }
-  }
-
-  // Rare drop event
-  state.last_drop = false;
-  if (Math.random() < 0.02 && state.cm < maxCm - 50) {
-    state.cm += 30 + Math.random() * 50;
-    state.last_drop = true;
-  }
-
-  state.cm = Math.max(0, Math.min(maxCm, Math.round(state.cm)));
-
-  // Temperature drift (Sudan: 25-45°C)
+  // Environment drift — temperature / battery / GSM keep moving so the
+  // detail page charts still look alive.
   state.temp += (Math.random() - 0.5) * 0.5;
   state.temp = Math.max(15, Math.min(45, state.temp));
 
-  // Battery slow decay
   if (state.battery_volt < 3.5) state.battery_volt = 5.5;
   else state.battery_volt -= 0.001 + Math.random() * 0.002;
 
-  // GSM drift
   state.gsm += Math.floor((Math.random() - 0.5) * 20);
   state.gsm = Math.max(0, Math.min(255, state.gsm));
 
@@ -93,9 +86,16 @@ export function generateUpdate(device: Device): TankUpdate {
   const battPercent = Math.max(0, Math.min(100, Math.round(((state.battery_volt - 3.4) * 100) / 2.6)));
   const alarmLow = fuelDepthCm < 20;
 
+  // Inactive devices emit a timestamp 2 minutes in the past so getTankStatus
+  // reports them as offline (no fresh telemetry).
+  const now = new Date();
+  const ts = device.scenario === 'inactive'
+    ? new Date(now.getTime() - 120_000)
+    : now;
+
   return {
     type: 'tank_update',
-    timestamp: new Date().toISOString(),
+    timestamp: ts.toISOString(),
     imei: parseInt(device.IMEI),
     device: device.name,
     site: {
@@ -117,7 +117,7 @@ export function generateUpdate(device: Device): TankUpdate {
       temperature_c: Math.round(state.temp * 2) / 2,
       ultrasonic_rssi: Math.floor(150 + Math.random() * 80),
       src: Math.floor(Math.random() * 16),
-      rtc: new Date().toTimeString().slice(0, 5),
+      rtc: ts.toTimeString().slice(0, 5),
     },
     device_status: {
       model: device.model,
@@ -137,8 +137,8 @@ export function generateUpdate(device: Device): TankUpdate {
       limit3: levelPercent < 30,
     },
     events: {
-      refill: state.last_refill,
-      drop: state.last_drop,
+      refill: false,
+      drop: false,
       scheduled: true,
     },
     raw_payload_hex: '', // not generated client-side

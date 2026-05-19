@@ -63,7 +63,13 @@ export type Device = {
   hw_uc15: boolean;
   sw_major: number;
   sw_minor: number;
+  // Demo scenario seed for the browser simulator. Determines whether this
+  // tank behaves as a healthy site, one running low, one in critical alarm,
+  // or one that has gone offline.
+  scenario?: 'normal' | 'warning' | 'critical' | 'inactive';
 };
+
+export type Scenario = NonNullable<Device['scenario']>;
 
 export type TankStatus = 'ok' | 'warning' | 'critical' | 'inactive';
 
